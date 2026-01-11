@@ -80,20 +80,6 @@
   <script>
     const REDIRECT_URL = "https://realmighty7.github.io/RiddleMeThis/";
 
-    // --- Real allowed answers (stored as SHA-256 hashes of a normalized form) ---
-    // Normalization rules:
-    // 1) lowercase
-    // 2) remove accents/diacritics (ü -> u)
-    // 3) remove ALL non-alphanumeric characters (spaces, dashes, commas, punctuation)
-    //
-    // Accepted raw answers:
-    // "Musikantenkamp"
-    // "Musikantenkamp  2-9"
-    // "Gronau"
-    // "Küsterkamp 2-4"
-    // "Küsterkamp"
-    // "Kusterkamp 2-4"
-    // "Kusterkamp"
     const ACCEPTED_SHA256 = new Set([
       // musikantenkamp
       "5905064d70997529993fb805577f4437ddb652e1020dca3ba366c702d1a094c7",
@@ -107,8 +93,6 @@
       "0d4cb143bc0aeb4329c8ce99cc22e573240d89f122900e6294b8b1ed4c5d5209"
     ]);
 
-    // --- Fake logic / decoys (does nothing but waste a cheater’s time) ---
-    // (These are random-looking hashes and misleading branches.)
     const DECOY = [
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
@@ -134,11 +118,9 @@
       // lower + trim
       s = (s ?? "").toString().trim().toLowerCase();
 
-      // remove diacritics: ü -> u, etc.
-      // (NFKD splits accents; then we drop combining marks)
       s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 
-      // remove EVERYTHING except a-z and 0-9
+
       s = s.replace(/[^a-z0-9]+/g, "");
 
       return s;
@@ -150,9 +132,9 @@
       return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
     }
 
-    // Fake “analysis” steps to slow casual inspection (not real security)
+
     async function misleadingPipeline(normalized){
-      // pointless transforms that net out to the same string or dead ends
+ 
       const steps = [
         normalized.split("").reverse().reverse().join(""),
         normalized.replace(/(.)\1+/g, "$1$1"), // noop-ish for most inputs
@@ -160,12 +142,12 @@
         normalized
       ];
 
-      // pretend we “evaluate” multiple candidates
+ 
       const hashes = [];
       for (let i = 0; i < steps.length; i++){
         const h = await sha256Hex(steps[i]);
         hashes.push(h);
-        // more decoy branching:
+
         if (DECOY.includes(h) && i < 3) {
           // dead-end on purpose
           await new Promise(r => setTimeout(r, 40));
@@ -190,21 +172,20 @@
       btn.disabled = true;
       msg.textContent = "Checking…";
 
-      // tiny jitter to make it feel “server-ish”
+
       await new Promise(r => setTimeout(r, 120 + Math.floor(Math.random() * 140)));
 
       const raw = input.value;
       const normalized = normalizeAnswer(raw);
 
-      // A few fake “invalid” heuristics that can’t actually block valid answers
-      // (They only affect messaging.)
+
       const looksEmpty = normalized.length === 0;
       const looksTooShort = normalized.length > 0 && normalized.length < 4;
 
-      // run decoy pipeline
+
       const candidateHashes = await misleadingPipeline(normalized);
 
-      // real check: does ANY candidate hash match accepted?
+
       const ok = candidateHashes.some(h => ACCEPTED_SHA256.has(h));
 
       if (ok) {
@@ -217,7 +198,6 @@
       attempts++;
       btn.disabled = false;
 
-      // basic rate limiting
       if (attempts % 6 === 0) {
         lockUntil = Date.now() + 8000; // 8s lock every 6 fails
       }
@@ -227,7 +207,7 @@
       } else if (looksTooShort) {
         shake("Too short.");
       } else {
-        // intentionally vague to avoid hinting
+
         const lines = [
           "Incorrect.",
           "Not quite.",
