@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Access Check</title>
+  <style>
+    :root { color-scheme: dark; }
+    body{
+      margin:0; min-height:100vh; display:grid; place-items:center;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background: radial-gradient(1200px 800px at 50% 30%, #1d2330, #0b0f16);
+      color:#e8eefc;
+    }
+    .card{
+      width:min(460px, calc(100% - 32px));
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+      backdrop-filter: blur(10px);
+    }
+    h1{ margin:0 0 8px; font-size:20px; font-weight:800; letter-spacing:0.2px; }
+    p{ margin:0 0 18px; opacity:0.85; line-height:1.35; }
+    label{ display:block; font-size:13px; opacity:0.9; margin-bottom:8px; }
+    input{
+      width:100%; box-sizing:border-box;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.25);
+      color:#e8eefc;
+      outline:none;
+      font-size: 15px;
+    }
+    input:focus{ border-color: rgba(120,170,255,0.8); }
+    .row{ display:flex; gap:10px; margin-top:12px; align-items:center; }
+    button{
+      flex:1;
+      padding: 12px 14px;
+      border:0;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #4b7bff, #2f5cff);
+      color:white;
+      font-weight:800;
+      cursor:pointer;
+    }
+    button:disabled{ opacity:0.6; cursor:not-allowed; }
+    .msg{ margin-top:12px; min-height:18px; font-size:13px; opacity:0.92; }
+    .hint{ margin-top:10px; font-size:12px; opacity:0.55; }
+    .shake{ animation: shake 0.25s linear 0s 2; }
+    @keyframes shake{
+      0%{ transform:translateX(0); }
+      25%{ transform:translateX(-6px); }
+      50%{ transform:translateX(6px); }
+      75%{ transform:translateX(-6px); }
+      100%{ transform:translateX(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <h1>Enter Passphrase</h1>
+    <p>Spacing, capitalization, and punctuation don’t matter.</p>
+
+    <form id="pwForm" autocomplete="off">
+      <label for="password">Passphrase</label>
+      <input id="password" type="password" inputmode="text" spellcheck="false" autofocus />
+
+      <div class="row">
+        <button id="btn" type="submit">Unlock</button>
+      </div>
+
+      <div class="msg" id="msg" aria-live="polite"></div>
+      <div class="hint">If you’re close, try removing punctuation or changing separators.</div>
+    </form>
+  </div>
+
+  <script>
+    const REDIRECT_URL = "https://realmighty7.github.io/RiddleMeThis/";
+
+    // --- Real allowed answers (stored as SHA-256 hashes of a normalized form) ---
+    // Normalization rules:
+    // 1) lowercase
+    // 2) remove accents/diacritics (ü -> u)
+    // 3) remove ALL non-alphanumeric characters (spaces, dashes, commas, punctuation)
+    //
+    // Accepted raw answers:
+    // "Musikantenkamp"
+    // "Musikantenkamp  2-9"
+    // "Gronau"
+    // "Küsterkamp 2-4"
+    // "Küsterkamp"
+    // "Kusterkamp 2-4"
+    // "Kusterkamp"
+    const ACCEPTED_SHA256 = new Set([
+      // musikantenkamp
+      "5905064d70997529993fb805577f4437ddb652e1020dca3ba366c702d1a094c7",
+      // musikantenkamp29
+      "0ef8349a9db2e04296ad170764ed747e9e85777fa535085025abdaddb4e27b5d",
+      // gronau
+      "160706698c371dd847a8bcc2f3b0db0860d7d0de592639fc4cbc189ed7ef380f",
+      // kusterkamp24
+      "a189ccd8465ae50ddd76f3ad1b118681928c17a5aa2f7fa0c1030b72751f9186",
+      // kusterkamp
+      "0d4cb143bc0aeb4329c8ce99cc22e573240d89f122900e6294b8b1ed4c5d5209"
+    ]);
+
+    // --- Fake logic / decoys (does nothing but waste a cheater’s time) ---
+    // (These are random-looking hashes and misleading branches.)
+    const DECOY = [
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+      "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+    ];
+
+    const form = document.getElementById("pwForm");
+    const input = document.getElementById("password");
+    const msg = document.getElementById("msg");
+    const card = document.getElementById("card");
+    const btn = document.getElementById("btn");
+
+    function shake(text){
+      msg.textContent = text;
+      card.classList.remove("shake");
+      void card.offsetWidth; // restart animation
+      card.classList.add("shake");
+      input.select();
+    }
+
+    function normalizeAnswer(s){
+      // lower + trim
+      s = (s ?? "").toString().trim().toLowerCase();
+
+      // remove diacritics: ü -> u, etc.
+      // (NFKD splits accents; then we drop combining marks)
+      s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+
+      // remove EVERYTHING except a-z and 0-9
+      s = s.replace(/[^a-z0-9]+/g, "");
+
+      return s;
+    }
+
+    async function sha256Hex(str){
+      const enc = new TextEncoder().encode(str);
+      const digest = await crypto.subtle.digest("SHA-256", enc);
+      return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    // Fake “analysis” steps to slow casual inspection (not real security)
+    async function misleadingPipeline(normalized){
+      // pointless transforms that net out to the same string or dead ends
+      const steps = [
+        normalized.split("").reverse().reverse().join(""),
+        normalized.replace(/(.)\1+/g, "$1$1"), // noop-ish for most inputs
+        normalized.replace(/0/g, "o").replace(/o/g, "0"), // toggles that usually break it
+        normalized
+      ];
+
+      // pretend we “evaluate” multiple candidates
+      const hashes = [];
+      for (let i = 0; i < steps.length; i++){
+        const h = await sha256Hex(steps[i]);
+        hashes.push(h);
+        // more decoy branching:
+        if (DECOY.includes(h) && i < 3) {
+          // dead-end on purpose
+          await new Promise(r => setTimeout(r, 40));
+        }
+      }
+      return hashes;
+    }
+
+    let attempts = 0;
+    let lockUntil = 0;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const now = Date.now();
+      if (now < lockUntil) {
+        const secs = Math.ceil((lockUntil - now) / 1000);
+        shake(`Try again in ${secs}s.`);
+        return;
+      }
+
+      btn.disabled = true;
+      msg.textContent = "Checking…";
+
+      // tiny jitter to make it feel “server-ish”
+      await new Promise(r => setTimeout(r, 120 + Math.floor(Math.random() * 140)));
+
+      const raw = input.value;
+      const normalized = normalizeAnswer(raw);
+
+      // A few fake “invalid” heuristics that can’t actually block valid answers
+      // (They only affect messaging.)
+      const looksEmpty = normalized.length === 0;
+      const looksTooShort = normalized.length > 0 && normalized.length < 4;
+
+      // run decoy pipeline
+      const candidateHashes = await misleadingPipeline(normalized);
+
+      // real check: does ANY candidate hash match accepted?
+      const ok = candidateHashes.some(h => ACCEPTED_SHA256.has(h));
+
+      if (ok) {
+        msg.textContent = "Unlocked. Redirecting…";
+        await new Promise(r => setTimeout(r, 250));
+        window.location.href = REDIRECT_URL;
+        return;
+      }
+
+      attempts++;
+      btn.disabled = false;
+
+      // basic rate limiting
+      if (attempts % 6 === 0) {
+        lockUntil = Date.now() + 8000; // 8s lock every 6 fails
+      }
+
+      if (looksEmpty) {
+        shake("Enter something first.");
+      } else if (looksTooShort) {
+        shake("Too short.");
+      } else {
+        // intentionally vague to avoid hinting
+        const lines = [
+          "Incorrect.",
+          "Not quite.",
+          "That doesn’t match.",
+          "Try a different form of it."
+        ];
+        shake(lines[Math.floor(Math.random() * lines.length)]);
+      }
+    });
+  </script>
+
+  <!--
+    NOTE (real talk):
+    This still isn't "secure" because the browser must run the code.
+    Hashing + fake logic makes it harder to casually spot, but a determined user can still bypass.
+    For true protection, you need server-side validation.
+  -->
+</body>
+</html>
