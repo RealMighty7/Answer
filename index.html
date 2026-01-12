@@ -4,6 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Access</title>
+
+  <meta http-equiv="Content-Security-Policy"
+        content="
+          default-src 'self';
+          connect-src 'self' https://riddle-verify.2nlindauer.workers.dev;
+          script-src 'self' 'unsafe-inline';
+          style-src 'self' 'unsafe-inline';
+          img-src 'self' data:;
+          base-uri 'self';
+          form-action 'self';
+        ">
+
   <style>
     :root { color-scheme: dark; }
     body{
@@ -82,12 +94,6 @@
     const b = document.getElementById("b");
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    const canon = (s) => (s ?? "")
-      .toString()
-      .trim()
-      .toLowerCase()
-      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "");
 
     function shake(t){
       m.textContent = t;
@@ -100,8 +106,7 @@
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       const raw = p.value;
-      const v = canon(raw);
-      if (!v) { shake("Enter something."); return; }
+      if (!raw || !String(raw).trim()) { shake("Enter something."); return; }
 
       b.disabled = true;
       m.textContent = "Checking…";
