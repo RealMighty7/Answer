@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Access Check</title>
+  <title>Access</title>
   <style>
     :root { color-scheme: dark; }
     body{
@@ -48,7 +48,6 @@
     }
     button:disabled{ opacity:0.6; cursor:not-allowed; }
     .msg{ margin-top:12px; min-height:18px; font-size:13px; opacity:0.92; }
-    .hint{ margin-top:10px; font-size:12px; opacity:0.55; }
     .shake{ animation: shake 0.25s linear 0s 2; }
     @keyframes shake{
       0%{ transform:translateX(0); }
@@ -64,99 +63,71 @@
     <h1>Enter Password</h1>
     <p>Spacing, capitalization, and punctuation don’t matter.</p>
 
-    <form id="pwForm" autocomplete="off">
-      <label for="password">Password</label>
-      <input id="password" type="password" inputmode="text" spellcheck="false" autofocus />
-
+    <form id="f" autocomplete="off">
+      <label for="p">Password</label>
+      <input id="p" type="password" inputmode="text" spellcheck="false" autofocus />
       <div class="row">
-        <button id="btn" type="submit">Unlock</button>
+        <button id="b" type="submit">Unlock</button>
       </div>
-
-      <div class="msg" id="msg" aria-live="polite"></div>
-      <div class="hint">If you’re close, try removing punctuation or changing separators.</div>
+      <div class="msg" id="m" aria-live="polite"></div>
     </form>
   </div>
 
   <script>
-    // NOTE: People can always see what endpoint the browser calls in DevTools → Network.
-    // The important part is: your *answer* never exists in this GitHub file.
-    const VERIFY_ENDPOINT = "https://riddle-verify.2nlindauer.workers.dev/verify";
+    const E = "https://riddle-verify.2nlindauer.workers.dev/check-access";
+    const f = document.getElementById("f");
+    const p = document.getElementById("p");
+    const m = document.getElementById("m");
+    const c = document.getElementById("card");
+    const b = document.getElementById("b");
 
-    const form = document.getElementById("pwForm");
-    const input = document.getElementById("password");
-    const msg = document.getElementById("msg");
-    const card = document.getElementById("card");
-    const btn = document.getElementById("btn");
-
-    function shake(text){
-      msg.textContent = text;
-      card.classList.remove("shake");
-      void card.offsetWidth;
-      card.classList.add("shake");
-      input.select();
-    }
-
-    // Client-side normalization (Worker re-normalizes too)
-    function normalizeAnswer(s){
-      s = (s ?? "").toString().trim().toLowerCase();
-      s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
-      s = s.replace(/[^a-z0-9]+/g, ""); // keep only letters+digits
-      return s;
-    }
-
-    let lockUntil = 0;
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const canon = (s) => (s ?? "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
 
-    form.addEventListener("submit", async (e) => {
+    function shake(t){
+      m.textContent = t;
+      c.classList.remove("shake");
+      void c.offsetWidth;
+      c.classList.add("shake");
+      p.select();
+    }
+
+    f.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const raw = p.value;
+      const v = canon(raw);
+      if (!v) { shake("Enter something."); return; }
 
-      const now = Date.now();
-      if (now < lockUntil) {
-        const secs = Math.ceil((lockUntil - now) / 1000);
-        shake(`Try again in ${secs}s.`);
-        return;
-      }
+      b.disabled = true;
+      m.textContent = "Checking…";
+      await sleep(140 + Math.floor(Math.random() * 160));
 
-      btn.disabled = true;
-      msg.textContent = "Checking…";
-
-      await sleep(120 + Math.floor(Math.random() * 180));
-
-      const normalized = normalizeAnswer(input.value);
-      if (!normalized) { btn.disabled = false; shake("Enter something first."); return; }
-      if (normalized.length < 4) { btn.disabled = false; shake("Too short."); return; }
-
-      try {
-        const res = await fetch(VERIFY_ENDPOINT, {
+      try{
+        const res = await fetch(E, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ a: normalized })
+          body: JSON.stringify({ guess: raw })
         });
 
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          const redirectTo = data?.redirect || "https://realmighty7.github.io/RiddleMeThis/";
-          msg.textContent = "Unlocked. Redirecting…";
-          await sleep(250);
-          window.location.href = redirectTo;
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data && data.ok) {
+          m.textContent = "Unlocked.";
+          await sleep(200);
+          location.href = data.redirect || "https://realmighty7.github.io/RiddleMeThis/";
           return;
         }
 
-        if (res.status === 429) {
-          const data = await res.json().catch(() => ({}));
-          const secs = Math.max(5, Math.min(120, (data?.retryAfter ?? 15)));
-          lockUntil = Date.now() + (secs * 1000);
-          btn.disabled = false;
-          shake(`Try again in ${secs}s.`);
-          return;
-        }
-
-        btn.disabled = false;
-        const lines = ["Incorrect.", "Not quite.", "That doesn’t match.", "Try a different form of it."];
-        shake(lines[Math.floor(Math.random() * lines.length)]);
-      } catch (err) {
-        btn.disabled = false;
-        shake("Network error. Try again.");
+        b.disabled = false;
+        shake("Incorrect.");
+      } catch {
+        b.disabled = false;
+        shake("Network error.");
       }
     });
   </script>
