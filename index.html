@@ -78,8 +78,9 @@
   </div>
 
   <script>
-    // Your Cloudflare Worker endpoint (you’ll create this)
-    const VERIFY_ENDPOINT = "https://YOUR-WORKER.your-subdomain.workers.dev/verify";
+    // NOTE: People can always see what endpoint the browser calls in DevTools → Network.
+    // The important part is: your *answer* never exists in this GitHub file.
+    const VERIFY_ENDPOINT = "https://riddle-verify.2nlindauer.workers.dev/verify";
 
     const form = document.getElementById("pwForm");
     const input = document.getElementById("password");
@@ -95,15 +96,16 @@
       input.select();
     }
 
+    // Client-side normalization (Worker re-normalizes too)
     function normalizeAnswer(s){
       s = (s ?? "").toString().trim().toLowerCase();
       s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
-      s = s.replace(/[^a-z0-9]+/g, "");
+      s = s.replace(/[^a-z0-9]+/g, ""); // keep only letters+digits
       return s;
     }
 
-    let attempts = 0;
     let lockUntil = 0;
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -118,14 +120,11 @@
       btn.disabled = true;
       msg.textContent = "Checking…";
 
-      await new Promise(r => setTimeout(r, 120 + Math.floor(Math.random() * 140)));
+      await sleep(120 + Math.floor(Math.random() * 180));
 
       const normalized = normalizeAnswer(input.value);
-      const looksEmpty = normalized.length === 0;
-      const looksTooShort = normalized.length > 0 && normalized.length < 4;
-
-      if (looksEmpty) { btn.disabled = false; shake("Enter something first."); return; }
-      if (looksTooShort) { btn.disabled = false; shake("Too short."); return; }
+      if (!normalized) { btn.disabled = false; shake("Enter something first."); return; }
+      if (normalized.length < 4) { btn.disabled = false; shake("Too short."); return; }
 
       try {
         const res = await fetch(VERIFY_ENDPOINT, {
@@ -134,32 +133,25 @@
           body: JSON.stringify({ a: normalized })
         });
 
-        // 200 => ok (worker can return redirect URL as JSON)
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
           const redirectTo = data?.redirect || "https://realmighty7.github.io/RiddleMeThis/";
           msg.textContent = "Unlocked. Redirecting…";
-          await new Promise(r => setTimeout(r, 250));
+          await sleep(250);
           window.location.href = redirectTo;
           return;
         }
 
-        // 429 => rate-limited
         if (res.status === 429) {
           const data = await res.json().catch(() => ({}));
-          const secs = data?.retryAfter ?? 15;
+          const secs = Math.max(5, Math.min(120, (data?.retryAfter ?? 15)));
           lockUntil = Date.now() + (secs * 1000);
           btn.disabled = false;
           shake(`Try again in ${secs}s.`);
           return;
         }
 
-        // otherwise incorrect
-        attempts++;
         btn.disabled = false;
-
-        if (attempts % 6 === 0) lockUntil = Date.now() + 15000;
-
         const lines = ["Incorrect.", "Not quite.", "That doesn’t match.", "Try a different form of it."];
         shake(lines[Math.floor(Math.random() * lines.length)]);
       } catch (err) {
