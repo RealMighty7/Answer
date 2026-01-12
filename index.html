@@ -94,6 +94,12 @@
     const b = document.getElementById("b");
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const canon = (s) => (s ?? "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
 
     function shake(t){
       m.textContent = t;
@@ -106,7 +112,8 @@
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       const raw = p.value;
-      if (!raw || !String(raw).trim()) { shake("Enter something."); return; }
+      const v = canon(raw);
+      if (!v) { shake("Enter something."); return; }
 
       b.disabled = true;
       m.textContent = "Checking…";
